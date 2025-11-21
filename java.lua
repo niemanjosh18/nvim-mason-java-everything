@@ -1,45 +1,47 @@
 -- ~/.config/nvim/lua/plugins/java.lua
 -- Complete Java and Spring Boot setup for LazyVim
 -- Includes: LSP, Debugging, Testing, and Lombok support
--- Just drop this file in your plugins folder and restart Neovim
+-- Drop this file in lua/plugins/ and restart Neovim
 
 return {
-	-- Ensure Java is in treesitter
+	-- Treesitter
 	{
 		"nvim-treesitter/nvim-treesitter",
-		opts = { ensure_installed = { "java" } },
+		opts = function(_, opts)
+			opts.ensure_installed = opts.ensure_installed or {}
+			vim.list_extend(opts.ensure_installed, { "java" })
+		end,
 	},
 
-	-- Install Java tools via Mason
+	-- Mason: Install Java tools
 	{
 		"williamboman/mason.nvim",
-		opts = {
-			ensure_installed = {
+		opts = function(_, opts)
+			opts.ensure_installed = opts.ensure_installed or {}
+			vim.list_extend(opts.ensure_installed, {
 				"jdtls",
 				"java-debug-adapter",
 				"java-test",
-			},
-		},
+			})
+		end,
 	},
 
-	-- Setup nvim-jdtls
+	-- Java LSP
 	{
 		"mfussenegger/nvim-jdtls",
-		ft = "java",
-		dependencies = {
-			"mfussenegger/nvim-dap",
-		},
+		ft = { "java" },
+		dependencies = { "folke/which-key.nvim" },
 		opts = function()
 			return {
-				-- How to find the root dir for a given filename
+				-- Find root directory
 				root_dir = require("jdtls.setup").find_root({ ".git", "mvnw", "gradlew", "pom.xml", "build.gradle" }),
 
-				-- How to find the project name for a given root dir
+				-- Project name function
 				project_name = function(root_dir)
 					return root_dir and vim.fs.basename(root_dir)
 				end,
 
-				-- Where are the config and workspace dirs for a project?
+				-- Config and workspace directories
 				jdtls_config_dir = function(project_name)
 					return vim.fn.stdpath("cache") .. "/jdtls/" .. project_name .. "/config"
 				end,
@@ -47,14 +49,13 @@ return {
 					return vim.fn.stdpath("cache") .. "/jdtls/" .. project_name .. "/workspace"
 				end,
 
-				-- How to run jdtls with Lombok support
+				-- Command to run jdtls with Lombok
 				cmd = {
 					vim.fn.exepath("jdtls"),
 					"--jvm-arg=-javaagent:" .. vim.fn.stdpath("data") .. "/mason/packages/jdtls/lombok.jar",
 				},
 
 				full_cmd = function(opts)
-					local fname = vim.api.nvim_buf_get_name(0)
 					local root_dir = opts.root_dir
 					local project_name = opts.project_name(root_dir)
 					local cmd = vim.deepcopy(opts.cmd)
@@ -117,13 +118,14 @@ return {
 				},
 			}
 		end,
+
 		config = function(_, opts)
-			-- Find and load the debug adapter bundles
+			-- Function to get debug adapter bundles
 			local function get_bundles()
 				local bundles = {}
 				local mason_path = vim.fn.stdpath("data") .. "/mason/packages"
 
-				-- Java debug adapter
+				-- Java Debug Adapter
 				local java_debug_path = mason_path
 					.. "/java-debug-adapter/extension/server/com.microsoft.java.debug.plugin-*.jar"
 				for _, bundle in ipairs(vim.split(vim.fn.glob(java_debug_path), "\n")) do
@@ -132,7 +134,7 @@ return {
 					end
 				end
 
-				-- Java test adapter
+				-- Java Test Adapter
 				local java_test_path = mason_path .. "/java-test/extension/server/*.jar"
 				for _, bundle in ipairs(vim.split(vim.fn.glob(java_test_path), "\n")) do
 					if vim.fn.filereadable(bundle) == 1 then
@@ -143,9 +145,16 @@ return {
 				return bundles
 			end
 
-			-- Attach jdtls for each java buffer
+			-- Attach jdtls to buffer
 			local function attach_jdtls()
 				local bundles = get_bundles()
+
+				-- Get capabilities from LazyVim's cmp setup
+				local capabilities = vim.lsp.protocol.make_client_capabilities()
+				local has_cmp, cmp_lsp = pcall(require, "cmp_nvim_lsp")
+				if has_cmp then
+					capabilities = cmp_lsp.default_capabilities(capabilities)
+				end
 
 				local config = {
 					cmd = opts.full_cmd(opts),
@@ -154,72 +163,79 @@ return {
 					init_options = {
 						bundles = bundles,
 					},
-					capabilities = require("cmp_nvim_lsp").default_capabilities(),
+					capabilities = capabilities,
 				}
 
+				-- Start or attach jdtls
 				require("jdtls").start_or_attach(config)
 
-				-- Setup DAP for debugging
-				require("jdtls").setup_dap({ hotcodereplace = "auto" })
-				require("jdtls.dap").setup_dap_main_class_configs()
+				-- Setup DAP if available
+				local has_dap, jdtls_dap = pcall(require, "jdtls.dap")
+				if has_dap then
+					jdtls_dap.setup_dap_main_class_configs()
+					require("jdtls").setup_dap({ hotcodereplace = "auto" })
+				end
 
-				-- Java-specific keymaps
-				local buf = vim.api.nvim_get_current_buf()
-
-				-- Refactoring
-				vim.keymap.set(
-					"n",
-					"<leader>co",
-					require("jdtls").organize_imports,
-					{ buffer = buf, desc = "Organize Imports" }
-				)
-				vim.keymap.set(
-					"n",
-					"<leader>cxv",
-					require("jdtls").extract_variable_all,
-					{ buffer = buf, desc = "Extract Variable" }
-				)
-				vim.keymap.set(
-					"n",
-					"<leader>cxc",
-					require("jdtls").extract_constant,
-					{ buffer = buf, desc = "Extract Constant" }
-				)
-				vim.keymap.set(
-					"v",
-					"<leader>cxm",
-					[[<ESC><CMD>lua require('jdtls').extract_method(true)<CR>]],
-					{ buffer = buf, desc = "Extract Method" }
-				)
-				vim.keymap.set(
-					"v",
-					"<leader>cxv",
-					[[<ESC><CMD>lua require('jdtls').extract_variable_all(true)<CR>]],
-					{ buffer = buf, desc = "Extract Variable" }
-				)
-				vim.keymap.set(
-					"v",
-					"<leader>cxc",
-					[[<ESC><CMD>lua require('jdtls').extract_constant(true)<CR>]],
-					{ buffer = buf, desc = "Extract Constant" }
-				)
-
-				-- Testing
-				vim.keymap.set(
-					"n",
-					"<leader>tc",
-					require("jdtls.dap").test_class,
-					{ buffer = buf, desc = "Test Class" }
-				)
-				vim.keymap.set(
-					"n",
-					"<leader>tm",
-					require("jdtls.dap").test_nearest_method,
-					{ buffer = buf, desc = "Test Method" }
-				)
+				-- Setup keymaps with which-key
+				local wk = require("which-key")
+				wk.add({
+					{ "<leader>cj", group = "java", buffer = 0 },
+					{
+						"<leader>cjo",
+						function()
+							require("jdtls").organize_imports()
+						end,
+						desc = "Organize Imports",
+						buffer = 0,
+					},
+					{
+						"<leader>cjv",
+						function()
+							require("jdtls").extract_variable()
+						end,
+						desc = "Extract Variable",
+						buffer = 0,
+						mode = { "n", "v" },
+					},
+					{
+						"<leader>cjc",
+						function()
+							require("jdtls").extract_constant()
+						end,
+						desc = "Extract Constant",
+						buffer = 0,
+						mode = { "n", "v" },
+					},
+					{
+						"<leader>cjm",
+						function()
+							require("jdtls").extract_method(true)
+						end,
+						desc = "Extract Method",
+						buffer = 0,
+						mode = "v",
+					},
+					{ "<leader>cjt", group = "test", buffer = 0 },
+					{
+						"<leader>cjtc",
+						function()
+							require("jdtls.dap").test_class()
+						end,
+						desc = "Test Class",
+						buffer = 0,
+					},
+					{
+						"<leader>cjtm",
+						function()
+							require("jdtls.dap").test_nearest_method()
+						end,
+						desc = "Test Method",
+						buffer = 0,
+					},
+				})
 			end
 
-			-- Attach on FileType
+			-- Attach on Java FileType
 			vim.api.nvim_create_autocmd("FileType", {
 				pattern = "java",
 				callback = attach_jdtls,
@@ -232,25 +248,13 @@ return {
 		end,
 	},
 
-	-- Configure nvim-dap for debugging
-	{
-		"mfussenegger/nvim-dap",
-		opts = function()
-			-- Debug keymaps (these work automatically with LazyVim)
-			local dap = require("dap")
-
-			-- You can add custom configurations here if needed
-			dap.configurations.java = dap.configurations.java or {}
-		end,
-	},
-
-	-- Avoid duplicate LSP setup
+	-- Prevent nvim-lspconfig from setting up jdtls
 	{
 		"neovim/nvim-lspconfig",
 		opts = {
 			setup = {
 				jdtls = function()
-					return true
+					return true -- avoid duplicate setup
 				end,
 			},
 		},
