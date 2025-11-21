@@ -4,6 +4,20 @@
 -- Everything installs automatically!
 
 return {
+	-- IMPORTANT: Enable DAP core extra for debugging support
+	{ import = "lazyvim.plugins.extras.dap.core" },
+
+	-- Configure Mason to use nvim-java registry
+	{
+		"williamboman/mason.nvim",
+		opts = {
+			registries = {
+				"github:nvim-java/mason-registry",
+				"github:mason-org/mason-registry",
+			},
+		},
+	},
+
 	-- nvim-java: The easy way to do Java in Neovim
 	{
 		"nvim-java/nvim-java",
@@ -15,21 +29,8 @@ return {
 			"MunifTanjim/nui.nvim",
 			"neovim/nvim-lspconfig",
 			"mfussenegger/nvim-dap",
-			{
-				"williamboman/mason.nvim",
-				opts = {
-					registries = {
-						"github:nvim-java/mason-registry",
-						"github:mason-org/mason-registry",
-					},
-				},
-			},
+			"williamboman/mason.nvim",
 		},
-	},
-
-	-- Configure nvim-java
-	{
-		"nvim-java/nvim-java",
 		config = function()
 			require("java").setup({
 				-- Everything is auto-configured, but you can customize here if needed
@@ -61,10 +62,6 @@ return {
 
 				spring_boot_tools = {
 					enable = true,
-				},
-
-				jdtls = {
-					-- jdtls settings go here
 				},
 
 				notifications = {
